@@ -1,0 +1,43 @@
+{
+	"name": "@gitbutler/i18n-preprocessor",
+	"version": "0.0.1",
+	"description": "Zero-intrusion Svelte preprocessor for i18n injection at compile time.",
+	"type": "module",
+	"exports": {
+		".": "./dist/index.js",
+		"./vite": "./dist/vite-plugin.js"
+	},
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"test": "vitest run",
+		"prepare": "pnpm build"
+	},
+	"keywords": [
+		"svelte",
+		"preprocessor",
+		"i18n",
+		"translation",
+		"compile-time"
+	],
+	"author": "GitButler Community",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/gitbutlerapp/gitbutler"
+	},
+	"homepage": "https://github.com/gitbutlerapp/gitbutler/tree/master/packages/i18n-preprocessor",
+	"dependencies": {
+		"magic-string": "^0.30.21",
+		"typescript": "catalog:"
+	},
+	"peerDependencies": {
+		"svelte": ">=5.0.0"
+	},
+	"devDependencies": {
+		"svelte": "catalog:svelte",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

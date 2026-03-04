@@ -1,0 +1,6 @@
+src
+*.ts
+*.tsx
+*.test.*
+tsconfig.json
+vitest.config.*
