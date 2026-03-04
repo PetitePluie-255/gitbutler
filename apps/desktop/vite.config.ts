@@ -1,11 +1,13 @@
 import { sentrySvelteKit } from "@sentry/sveltekit";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { svelteTesting } from "@testing-library/svelte/vite";
+import viteI18nPlugin from "@gitbutler/i18n-preprocessor/vite";
 import { defineConfig, type Plugin } from "vitest/config";
 
 export default defineConfig({
 	plugins: [
 		process.env.VITE_DEBOUNCE_RELOAD ? debounceReload() : undefined,
+		viteI18nPlugin(),
 		sentrySvelteKit({
 			adapter: "other",
 			autoInstrument: {

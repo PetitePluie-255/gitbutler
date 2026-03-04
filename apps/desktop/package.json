@@ -26,6 +26,7 @@
 		"@anthropic-ai/sdk": "^0.74.0",
 		"@gitbutler/core": "workspace:*",
 		"@gitbutler/design-core": "1.8.3",
+		"@gitbutler/i18n-preprocessor": "workspace:*",
 		"@gitbutler/shared": "workspace:*",
 		"@gitbutler/svelte-comment-injector": "workspace:*",
 		"@gitbutler/ui": "workspace:*",
