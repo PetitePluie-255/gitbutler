@@ -28,6 +28,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+locales/missing-en.log
+locales/matched-en.log
+locales/i18n-preprocessor.debug.log
 
 dist
 dist-ssr

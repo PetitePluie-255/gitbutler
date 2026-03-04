@@ -43,7 +43,9 @@
 		"rustdoc": "cargo +nightly doc -Zrustdoc-mergeable-info --open",
 		"isgood": "pnpm check && pnpm lint",
 		"begood": "pnpm format && pnpm fix",
-		"generate-ts-definitions": "scripts/generate-ts-definitions-from-rust.sh"
+		"generate-ts-definitions": "scripts/generate-ts-definitions-from-rust.sh",
+		"i18n:diff": "node scripts/i18n-diff.js",
+		"i18n:stale": "node scripts/i18n-stale.js"
 	},
 	"devDependencies": {
 		"@eslint/js": "9.39.2",
