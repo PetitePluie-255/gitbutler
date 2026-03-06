@@ -20,9 +20,9 @@
 
 <SettingsSection>
 	{#snippet description()}
-		GitButler supports the use of OpenAI and Anthropic to provide commit message and branch name
-		generation. This works either through GitButler's API or in a bring your own key configuration
-		and can be configured in the main preferences screen.
+		GitButler supports the use of OpenAI, Anthropic, and Antigravity to provide commit message and
+		branch name generation. This works either through GitButler's API or in a bring your own key
+		configuration and can be configured in the main preferences screen.
 	{/snippet}
 
 	<Spacer />

@@ -30,6 +30,13 @@ function isDisabledByEnv(): boolean {
 	return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
 }
 
+function isDryRunEnabled(explicit?: boolean): boolean {
+	if (explicit !== undefined) return explicit;
+	const raw = process.env.VITE_I18N_DRY_RUN;
+	if (!raw) return false;
+	return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
 function loadDictionary(dictionaryPath: string): Map<string, string> {
 	try {
 		const json = fs.readFileSync(dictionaryPath, "utf-8");
@@ -39,6 +46,19 @@ function loadDictionary(dictionaryPath: string): Map<string, string> {
 		return new Map();
 	}
 }
+
+function shouldSkipTranslation(core: string): boolean {
+	if (!core) return true;
+	if (core.includes("://")) return true;
+	if (/^\/\S+$/.test(core)) return true;
+	if (/^\.\.?\/\S+$/.test(core)) return true;
+	if ((core.includes("/") || core.includes("\\")) && !core.includes(" ")) return true;
+	return false;
+}
+
+const DRY_RUN_LOG = path.resolve(findRepoRoot(process.cwd()), "locales/i18n-dry-run.log");
+const MISSING_LOG = path.resolve(findRepoRoot(process.cwd()), "locales/missing-en.log");
+const MATCHED_LOG = path.resolve(findRepoRoot(process.cwd()), "locales/matched-en.log");
 
 function escapeForQuote(value: string, quote: string) {
 	const escaped = value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
@@ -57,6 +77,7 @@ export type ViteI18nPluginOptions = {
 	dictionaryPath?: string;
 	attributeKeys?: string[];
 	functionNames?: string[];
+	dryRun?: boolean;
 };
 
 export default function viteI18nPlugin(options: ViteI18nPluginOptions = {}) {
@@ -72,11 +93,15 @@ export default function viteI18nPlugin(options: ViteI18nPluginOptions = {}) {
 		options.dictionaryPath ?? path.resolve(repoRoot, "locales/zh-CN.json");
 	const attributeKeys = new Set(options.attributeKeys ?? ["label", "title", "placeholder"]);
 	const functionNames = new Set(options.functionNames ?? ["showError"]);
+	const dryRun = isDryRunEnabled(options.dryRun);
 
 	let dictionary = loadDictionary(dictionaryPath);
 	let typescript: typeof import("typescript") | null = null;
 	let warned = false;
 	const require = createRequire(import.meta.url);
+	const dryRunEntries = new Set<string>();
+	const missingEntries = new Set<string>();
+	const matchedEntries = new Set<string>();
 
 	function ensureTypescript() {
 		if (typescript) return typescript;
@@ -118,6 +143,23 @@ export default function viteI18nPlugin(options: ViteI18nPluginOptions = {}) {
 					dictionary = loadDictionary(dictionaryPath);
 				}
 			});
+			if (dryRun) {
+				process.on("exit", () => {
+					if (dryRunEntries.size === 0) return;
+					fs.mkdirSync(path.dirname(DRY_RUN_LOG), { recursive: true });
+					fs.writeFileSync(DRY_RUN_LOG, Array.from(dryRunEntries).sort().join("\n") + "\n");
+				});
+			}
+			process.on("exit", () => {
+				if (missingEntries.size > 0) {
+					fs.mkdirSync(path.dirname(MISSING_LOG), { recursive: true });
+					fs.appendFileSync(MISSING_LOG, Array.from(missingEntries).sort().join("\n") + "\n");
+				}
+				if (matchedEntries.size > 0) {
+					fs.mkdirSync(path.dirname(MATCHED_LOG), { recursive: true });
+					fs.appendFileSync(MATCHED_LOG, Array.from(matchedEntries).sort().join("\n") + "\n");
+				}
+			});
 		},
 		transform(code: string, id: string) {
 			if (!isTargetFile(id)) return null;
@@ -143,16 +185,26 @@ export default function viteI18nPlugin(options: ViteI18nPluginOptions = {}) {
 						const initializer = node.initializer;
 						if (ts.isStringLiteral(initializer) || ts.isNoSubstitutionTemplateLiteral(initializer)) {
 							const original = initializer.text;
+							if (shouldSkipTranslation(original)) return;
 							const translated = dictionary.get(original);
 							if (translated && translated !== original) {
 								const start = initializer.getStart(sourceFile);
 								const end = initializer.getEnd();
 								const originalText = code.slice(start, end);
-								edits.push({
-									start,
-									end,
-									replacement: replacementForLiteral(originalText, translated),
-								});
+								if (!dryRun) {
+									edits.push({
+										start,
+										end,
+										replacement: replacementForLiteral(originalText, translated),
+									});
+								} else {
+									dryRunEntries.add(
+										`[${id}] ${original} -> ${translated}`,
+									);
+								}
+								matchedEntries.add(`[${id}] ${original}`);
+							} else {
+								missingEntries.add(`[${id}] ${original}`);
 							}
 						}
 					}
@@ -163,16 +215,26 @@ export default function viteI18nPlugin(options: ViteI18nPluginOptions = {}) {
 						const first = node.arguments[0];
 						if (first && (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first))) {
 							const original = first.text;
+							if (shouldSkipTranslation(original)) return;
 							const translated = dictionary.get(original);
 							if (translated && translated !== original) {
 								const start = first.getStart(sourceFile);
 								const end = first.getEnd();
 								const originalText = code.slice(start, end);
-								edits.push({
-									start,
-									end,
-									replacement: replacementForLiteral(originalText, translated),
-								});
+								if (!dryRun) {
+									edits.push({
+										start,
+										end,
+										replacement: replacementForLiteral(originalText, translated),
+									});
+								} else {
+									dryRunEntries.add(
+										`[${id}] ${original} -> ${translated}`,
+									);
+								}
+								matchedEntries.add(`[${id}] ${original}`);
+							} else {
+								missingEntries.add(`[${id}] ${original}`);
 							}
 						}
 					}

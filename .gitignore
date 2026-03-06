@@ -31,6 +31,7 @@ lerna-debug.log*
 locales/missing-en.log
 locales/matched-en.log
 locales/i18n-preprocessor.debug.log
+locales/i18n-dry-run.log
 
 dist
 dist-ssr

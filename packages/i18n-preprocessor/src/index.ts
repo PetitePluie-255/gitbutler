@@ -29,6 +29,7 @@ const DEFAULT_DICT_PATH = path.resolve(repoRoot, "locales/zh-CN.json");
 const DEFAULT_MISSING_LOG = path.resolve(repoRoot, "locales/missing-en.log");
 const DEFAULT_MATCHED_LOG = path.resolve(repoRoot, "locales/matched-en.log");
 const DEFAULT_DEBUG_LOG = path.resolve(repoRoot, "locales/i18n-preprocessor.debug.log");
+const DEFAULT_DRY_RUN_LOG = path.resolve(repoRoot, "locales/i18n-dry-run.log");
 
 type I18nPreprocessorOptions = {
 	enabled?: boolean;
@@ -38,6 +39,7 @@ type I18nPreprocessorOptions = {
 	matchedLogPath?: string;
 	watch?: boolean;
 	debug?: boolean;
+	dryRun?: boolean;
 };
 
 type DictionaryState = {
@@ -48,6 +50,7 @@ const dictionaryCache = new Map<string, DictionaryState>();
 const watchers = new Map<string, fs.FSWatcher>();
 const missingLogs = new Map<string, Set<string>>();
 const matchedLogs = new Map<string, Set<string>>();
+const dryRunLogs = new Map<string, Set<string>>();
 let exitHookRegistered = false;
 let debugLogged = false;
 let moduleDebugLogged = false;
@@ -55,6 +58,13 @@ let moduleDebugLogged = false;
 function isDebugEnabled(explicit?: boolean): boolean {
 	if (explicit !== undefined) return explicit;
 	const raw = process.env.VITE_I18N_DEBUG_LOG;
+	if (!raw) return false;
+	return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
+function isDryRunEnabled(explicit?: boolean): boolean {
+	if (explicit !== undefined) return explicit;
+	const raw = process.env.VITE_I18N_DRY_RUN;
 	if (!raw) return false;
 	return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
 }
@@ -114,6 +124,7 @@ function registerExitHook() {
 	const flush = () => {
 		writeLogs(missingLogs);
 		writeLogs(matchedLogs);
+		writeLogs(dryRunLogs);
 	};
 
 	process.on("exit", flush);
@@ -150,6 +161,18 @@ function splitText(raw: string) {
 
 function normalizeCore(core: string): string {
 	return core.replace(/\s+/g, " ").trim();
+}
+
+function shouldSkipTranslation(core: string): boolean {
+	if (!core) return true;
+	// Skip obvious URLs
+	if (core.includes("://")) return true;
+	// Skip absolute or relative paths without spaces
+	if (/^\/\S+$/.test(core)) return true;
+	if (/^\.\.?\/\S+$/.test(core)) return true;
+	// Skip path-like tokens without spaces
+	if ((core.includes("/") || core.includes("\\")) && !core.includes(" ")) return true;
+	return false;
 }
 
 function isIdentifierExpression(node: any): node is { type: "Identifier"; name: string } {
@@ -227,15 +250,27 @@ function walkHtml(node: any, visit: (node: any) => void) {
 	}
 }
 
-const ATTRIBUTE_WHITELIST = new Set(["title", "placeholder", "aria-label", "alt"]);
+const ATTRIBUTE_WHITELIST = new Set(["label", "title", "placeholder", "aria-label", "alt"]);
 const MUSTACHE_TYPES = new Set(["MustacheTag", "ExpressionTag"]);
-const EXPRESSION_PROPERTY_WHITELIST = new Set(["label", "title", "placeholder"]);
+const EXPRESSION_PROPERTY_WHITELIST = new Set(["label", "title", "placeholder", "message"]);
 const ATTRIBUTE_EXPRESSION_WHITELIST = new Set([
 	"tooltip",
 	"label",
 	"title",
 	"placeholder",
 	"aria-label",
+]);
+const SCRIPT_VALUE_KEY_WHITELIST = new Set([
+	"label",
+	"title",
+	"placeholder",
+	"message",
+	"tooltip",
+	"caption",
+	"text",
+	"all",
+	"local",
+	"pullRequest",
 ]);
 
 function shouldTranslateLiteral(node: any, parent: any) {
@@ -257,6 +292,7 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 	const matchedLogPath = options.matchedLogPath ?? DEFAULT_MATCHED_LOG;
 	const watch = options.watch ?? dev;
 	const debug = isDebugEnabled(options.debug);
+	const dryRun = isDryRunEnabled((options as { dryRun?: boolean }).dryRun);
 
 	if (debug) {
 		writeDebugOnce(`module loaded ${new Date().toISOString()}`);
@@ -275,6 +311,7 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 		// Ensure log files are created on exit even if no entries were recorded.
 		if (!missingLogs.has(missingLogPath)) missingLogs.set(missingLogPath, new Set());
 		if (!matchedLogs.has(matchedLogPath)) matchedLogs.set(matchedLogPath, new Set());
+		if (!dryRunLogs.has(DEFAULT_DRY_RUN_LOG)) dryRunLogs.set(DEFAULT_DRY_RUN_LOG, new Set());
 	}
 
 	const dictionaryState = ensureDictionary(dictionaryPath, watch, dev);
@@ -310,6 +347,7 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 				const { leading, core, trailing } = splitText(raw);
 				if (!core) return;
 				const normalized = normalizeCore(core);
+				if (shouldSkipTranslation(normalized)) return;
 				const translated =
 					dictionaryState.map.get(core) ??
 					(normalized ? dictionaryState.map.get(normalized) : undefined);
@@ -317,11 +355,19 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 				const entry = `[${fileLabel}] ${entryText}`;
 
 				if (translated) {
-					replacements.push({
-						start,
-						end,
-						replacement: `${leading}${translated}${trailing}`,
-					});
+					if (!dryRun) {
+						replacements.push({
+							start,
+							end,
+							replacement: `${leading}${translated}${trailing}`,
+						});
+					} else if (logEnabled) {
+						addLogEntry(
+							dryRunLogs,
+							DEFAULT_DRY_RUN_LOG,
+							`[${fileLabel}] ${core} -> ${translated}`,
+						);
+					}
 					if (logEnabled) addLogEntry(matchedLogs, matchedLogPath, entry);
 				} else if (logEnabled) {
 					addLogEntry(missingLogs, missingLogPath, entry);
@@ -338,6 +384,7 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 				const { leading, core, trailing } = splitText(raw);
 				if (!core) return;
 				const normalized = normalizeCore(core);
+				if (shouldSkipTranslation(normalized)) return;
 				const translated =
 					dictionaryState.map.get(core) ??
 					(normalized ? dictionaryState.map.get(normalized) : undefined);
@@ -353,11 +400,19 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 						if (logEnabled) addLogEntry(missingLogs, missingLogPath, entry);
 						return;
 					}
-					replacements.push({
-						start,
-						end,
-						replacement: `${leading}${translated}${trailing}`,
-					});
+					if (!dryRun) {
+						replacements.push({
+							start,
+							end,
+							replacement: `${leading}${translated}${trailing}`,
+						});
+					} else if (logEnabled) {
+						addLogEntry(
+							dryRunLogs,
+							DEFAULT_DRY_RUN_LOG,
+							`[${fileLabel}] ${core} -> ${translated}`,
+						);
+					}
 					if (logEnabled) addLogEntry(matchedLogs, matchedLogPath, entry);
 				} else if (logEnabled) {
 					addLogEntry(missingLogs, missingLogPath, entry);
@@ -408,6 +463,7 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 					const originalText = source.slice(start, end);
 					if (!originalText) return;
 					const normalized = normalizeCore(originalValue);
+					if (shouldSkipTranslation(normalized)) return;
 					const translated =
 						dictionaryState.map.get(originalValue) ??
 						(normalized ? dictionaryState.map.get(normalized) : undefined);
@@ -418,11 +474,70 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 						: normalized || originalValue;
 					const entry = `[${fileLabel}] ${entryText}`;
 					if (translated) {
-						replacements.push({
-							start,
-							end,
-							replacement: replacementForLiteral(originalText, translated),
-						});
+						if (!dryRun) {
+							replacements.push({
+								start,
+								end,
+								replacement: replacementForLiteral(originalText, translated),
+							});
+						} else if (logEnabled) {
+							addLogEntry(
+								dryRunLogs,
+								DEFAULT_DRY_RUN_LOG,
+								`[${fileLabel}] ${originalValue} -> ${translated}`,
+							);
+						}
+						if (logEnabled) addLogEntry(matchedLogs, matchedLogPath, entry);
+					} else if (logEnabled) {
+						addLogEntry(missingLogs, missingLogPath, entry);
+					}
+				});
+			};
+
+			const processScriptContent = (program: any, source: string) => {
+				if (!program) return;
+				walkExpression(program, (node) => {
+					if (node.type !== "Property") return;
+					if (node.computed) return;
+					let keyName: string | null = null;
+					if (node.key?.type === "Identifier") keyName = node.key.name;
+					if (node.key?.type === "Literal" && typeof node.key.value === "string") {
+						keyName = node.key.value;
+					}
+					if (!keyName || !SCRIPT_VALUE_KEY_WHITELIST.has(keyName)) return;
+					const value = node.value;
+					if (!value || value.type !== "Literal" || typeof value.value !== "string") return;
+					const originalValue = value.value;
+					const start = value.start ?? null;
+					const end = value.end ?? null;
+					if (start === null || end === null) return;
+					const originalText = source.slice(start, end);
+					if (!originalText) return;
+					const normalized = normalizeCore(originalValue);
+					if (shouldSkipTranslation(normalized)) return;
+					const translated =
+						dictionaryState.map.get(originalValue) ??
+						(normalized ? dictionaryState.map.get(normalized) : undefined);
+					const entryText = translated
+						? dictionaryState.map.has(originalValue)
+							? originalValue
+							: normalized
+						: normalized || originalValue;
+					const entry = `[${fileLabel}] ${entryText}`;
+					if (translated) {
+						if (!dryRun) {
+							replacements.push({
+								start,
+								end,
+								replacement: replacementForLiteral(originalText, translated),
+							});
+						} else if (logEnabled) {
+							addLogEntry(
+								dryRunLogs,
+								DEFAULT_DRY_RUN_LOG,
+								`[${fileLabel}] ${originalValue} -> ${translated}`,
+							);
+						}
 						if (logEnabled) addLogEntry(matchedLogs, matchedLogPath, entry);
 					} else if (logEnabled) {
 						addLogEntry(missingLogs, missingLogPath, entry);
@@ -483,6 +598,12 @@ export default function svelteI18nPreprocessor(options: I18nPreprocessorOptions 
 			};
 
 			const root = (ast as { html?: any; fragment?: any }).fragment ?? ast.html;
+			if (ast.instance?.content) {
+				processScriptContent(ast.instance.content, content);
+			}
+			if (ast.module?.content) {
+				processScriptContent(ast.module.content, content);
+			}
 			walkHtml(root, (node) => {
 				if (node.type === "Text" && typeof node.data === "string") {
 					if (skipTextNodes.has(node)) return;

@@ -2,10 +2,17 @@ import { isStr } from "@gitbutler/ui/utils/string";
 import type { Persisted } from "@gitbutler/shared/persisted";
 
 export enum ModelKind {
+	Antigravity = "antigravity",
 	OpenAI = "openai",
 	Anthropic = "anthropic",
 	Ollama = "ollama",
 	LMStudio = "lmstudio",
+}
+
+// https://platform.openai.com/docs/models
+export enum AntigravityModelName {
+	Gemini3ProHigh = "gemini-3.1-pro-high",
+	Gemini3Flash = "gemini-3-flash",
 }
 
 // https://platform.openai.com/docs/models

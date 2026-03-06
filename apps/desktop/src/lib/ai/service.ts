@@ -1,4 +1,5 @@
 import { AnthropicAIClient } from "$lib/ai/anthropicClient";
+import { AntigravityClient } from "$lib/ai/antigravityClient";
 import { ButlerAIClient } from "$lib/ai/butlerClient";
 import { formatStagedChanges } from "$lib/ai/diffFormatting";
 import {
@@ -27,6 +28,7 @@ import {
 	type Prompt,
 	type PromptMessage,
 	type FileChange,
+	AntigravityModelName,
 } from "$lib/ai/types";
 import { splitMessage } from "$lib/utils/commitMessage";
 import { InjectionToken } from "@gitbutler/core/context";
@@ -47,12 +49,16 @@ export enum KeyOption {
 export enum AISecretHandle {
 	OpenAIKey = "aiOpenAIKey",
 	AnthropicKey = "aiAnthropicKey",
+	AntigravityKey = "aiAntigravityKey",
 }
 
 export enum GitAIConfigKey {
 	ModelProvider = "gitbutler.aiModelProvider",
+	AntigravityKeyOption = "gitbutler.aiAntigravityKeyOption",
 	OpenAIKeyOption = "gitbutler.aiOpenAIKeyOption",
+	AntigravityModelName = "gitbutler.aiAntigravityModelName",
 	OpenAIModelName = "gitbutler.aiOpenAIModelName",
+	AntigravityCustomEndpoint = "gitbutler.aiAntigravityCustomEndpoint",
 	OpenAICustomEndpoint = "gitbutler.aiOpenAICustomEndpoint",
 	AnthropicKeyOption = "gitbutler.aiAnthropicKeyOption",
 	AnthropicModelName = "gitbutler.aiAnthropicModelName",
@@ -138,6 +144,13 @@ export class AIService {
 		);
 	}
 
+	async getAntigravityKeyOption() {
+		return await this.gitConfig.getWithDefault<KeyOption>(
+			GitAIConfigKey.AntigravityKeyOption,
+			KeyOption.ButlerAPI,
+		);
+	}
+
 	async getOpenAIKeyOption() {
 		return await this.gitConfig.getWithDefault<KeyOption>(
 			GitAIConfigKey.OpenAIKeyOption,
@@ -149,8 +162,23 @@ export class AIService {
 		return await this.gitConfig.get<string>(GitAIConfigKey.OpenAICustomEndpoint);
 	}
 
+	async getAntigravityCustomEndpoint() {
+		return await this.gitConfig.get<string>(GitAIConfigKey.AntigravityCustomEndpoint);
+	}
+
+	async getAntigravityKey() {
+		return await this.secretsService.get(AISecretHandle.AntigravityKey);
+	}
+
 	async getOpenAIKey() {
 		return await this.secretsService.get(AISecretHandle.OpenAIKey);
+	}
+
+	async getAntigravityModelName() {
+		return await this.gitConfig.getWithDefault<AntigravityModelName>(
+			GitAIConfigKey.AntigravityModelName,
+			AntigravityModelName.Gemini3ProHigh,
+		);
 	}
 
 	async getOpenAIModleName() {
@@ -232,13 +260,20 @@ export class AIService {
 		const modelKind = await this.getModelKind();
 		const openAIKeyOption = await this.getOpenAIKeyOption();
 		const anthropicKeyOption = await this.getAnthropicKeyOption();
+		const antigravityKeyOption = await this.getAntigravityKeyOption();
 
 		const openAIActiveAndUsingButlerAPI =
 			modelKind === ModelKind.OpenAI && openAIKeyOption === KeyOption.ButlerAPI;
 		const anthropicActiveAndUsingButlerAPI =
 			modelKind === ModelKind.Anthropic && anthropicKeyOption === KeyOption.ButlerAPI;
+		const antigravityActiveAndUsingButlerAPI =
+			modelKind === ModelKind.Antigravity && antigravityKeyOption === KeyOption.ButlerAPI;
 
-		return openAIActiveAndUsingButlerAPI || anthropicActiveAndUsingButlerAPI;
+		return (
+			openAIActiveAndUsingButlerAPI ||
+			anthropicActiveAndUsingButlerAPI ||
+			antigravityActiveAndUsingButlerAPI
+		);
 	}
 
 	async validateConfiguration(): Promise<boolean> {
@@ -254,6 +289,8 @@ export class AIService {
 			modelKind === ModelKind.OpenAI && !!(await this.getOpenAIKey());
 		const anthropicActiveAndKeyProvided =
 			modelKind === ModelKind.Anthropic && !!(await this.getAnthropicKey());
+		const antigravityActiveAndKeyProvided =
+			modelKind === ModelKind.Antigravity && !!(await this.getAntigravityKey());
 		const ollamaActiveAndEndpointProvided =
 			modelKind === ModelKind.Ollama && !!ollamaEndpoint && !!ollamaModelName;
 		const lmStudioActiveAndEndpointProvided =
@@ -262,6 +299,7 @@ export class AIService {
 		return (
 			openAIActiveAndKeyProvided ||
 			anthropicActiveAndKeyProvided ||
+			antigravityActiveAndKeyProvided ||
 			ollamaActiveAndEndpointProvided ||
 			lmStudioActiveAndEndpointProvided
 		);
@@ -288,6 +326,20 @@ export class AIService {
 			}
 
 			return new ButlerAIClient(this.cloud, modelKind);
+		}
+
+		if (modelKind === ModelKind.Antigravity) {
+			const antigravityKey = await this.getAntigravityKey();
+			const antigravityModelName = await this.getAntigravityModelName();
+			const antigravityCustomEndpoint = await this.getAntigravityCustomEndpoint();
+
+			if (!antigravityKey) {
+				throw new Error(
+					"When using Antigravity in a bring your own key configuration, you must provide a valid token",
+				);
+			}
+
+			return new AntigravityClient(antigravityKey, antigravityModelName, antigravityCustomEndpoint);
 		}
 
 		if (modelKind === ModelKind.Ollama) {

@@ -73,7 +73,11 @@
 			debugInfo += `, Config valid: ${isConfigValid}`;
 
 			if (!isConfigValid) {
-				if (modelKind === ModelKind.OpenAI || modelKind === ModelKind.Anthropic) {
+				if (
+					modelKind === ModelKind.OpenAI ||
+					modelKind === ModelKind.Anthropic ||
+					modelKind === ModelKind.Antigravity
+				) {
 					if (isUsingButlerAPI && !$user) {
 						throw new Error("Please sign in to use GitButler's AI API");
 					} else {
@@ -208,9 +212,9 @@
 				{#snippet content()}
 					<div class="result-content" transition:slide={{ duration: 250 }}>
 						{#if error}
-							{#if (modelKind === ModelKind.OpenAI || modelKind === ModelKind.Anthropic) && isUsingButlerAPI && !$user}
+							{#if (modelKind === ModelKind.OpenAI || modelKind === ModelKind.Anthropic || modelKind === ModelKind.Antigravity) && isUsingButlerAPI && !$user}
 								<span> Please sign in to use GitButler's AI API. </span>
-							{:else if modelKind === ModelKind.OpenAI || modelKind === ModelKind.Anthropic}
+							{:else if modelKind === ModelKind.OpenAI || modelKind === ModelKind.Anthropic || modelKind === ModelKind.Antigravity}
 								<span> Please check your API key or try GitButler's API. </span>
 							{:else if modelKind === ModelKind.Ollama}
 								<span>

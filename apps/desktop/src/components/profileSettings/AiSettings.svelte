@@ -4,7 +4,12 @@
 	import AuthorizationBanner from "$components/AuthorizationBanner.svelte";
 	import SettingsSection from "$components/SettingsSection.svelte";
 	import { AISecretHandle, AI_SERVICE, GitAIConfigKey, KeyOption } from "$lib/ai/service";
-	import { OpenAIModelName, AnthropicModelName, ModelKind } from "$lib/ai/types";
+	import {
+		OpenAIModelName,
+		AnthropicModelName,
+		ModelKind,
+		AntigravityModelName,
+	} from "$lib/ai/types";
 	import { GIT_CONFIG_SERVICE } from "$lib/config/gitConfigService";
 	import { SECRET_SERVICE } from "$lib/secrets/secretsService";
 	import { USER_SERVICE } from "$lib/user/userService";
@@ -32,10 +37,14 @@
 	let initialized = false;
 
 	let modelKind: ModelKind | undefined = $state();
+	let antigravityOption: KeyOption | undefined = $state();
 	let openAIKeyOption: KeyOption | undefined = $state();
 	let anthropicKeyOption: KeyOption | undefined = $state();
+	let antigravityKey: string | undefined = $state();
 	let openAIKey: string | undefined = $state();
+	let antigravityCustomEndpoint: string | undefined = $state();
 	let openAICustomEndpoint: string | undefined = $state();
+	let antigravityModelName: AntigravityModelName | undefined = $state();
 	let openAIModelName: OpenAIModelName | undefined = $state();
 	let anthropicKey: string | undefined = $state();
 	let anthropicModelName: AnthropicModelName | undefined = $state();
@@ -58,10 +67,14 @@
 	onMount(async () => {
 		modelKind = await aiService.getModelKind();
 
+		antigravityOption = await aiService.getAntigravityKeyOption();
 		openAIKeyOption = await aiService.getOpenAIKeyOption();
+		antigravityModelName = await aiService.getAntigravityModelName();
 		openAIModelName = await aiService.getOpenAIModleName();
+		antigravityKey = await aiService.getAntigravityKey();
 		openAIKey = await aiService.getOpenAIKey();
 		openAICustomEndpoint = await aiService.getOpenAICustomEndpoint();
+		antigravityCustomEndpoint = await aiService.getAntigravityCustomEndpoint();
 
 		anthropicKeyOption = await aiService.getAnthropicKeyOption();
 		anthropicModelName = await aiService.getAnthropicModelName();
@@ -89,6 +102,17 @@
 		{
 			label: "Your own key",
 			value: KeyOption.BringYourOwn,
+		},
+	];
+
+	const antigravityModelOptions = [
+		{
+			label: "Gemini 3 Pro (High)",
+			value: AntigravityModelName.Gemini3ProHigh,
+		},
+		{
+			label: "Gemini 3 Flash",
+			value: AntigravityModelName.Gemini3Flash,
 		},
 	];
 
@@ -156,13 +180,25 @@
 		setConfiguration(GitAIConfigKey.ModelProvider, modelKind);
 	});
 	run(() => {
+		setConfiguration(GitAIConfigKey.AntigravityKeyOption, antigravityOption);
+	});
+	run(() => {
 		setConfiguration(GitAIConfigKey.OpenAIKeyOption, openAIKeyOption);
+	});
+	run(() => {
+		setConfiguration(GitAIConfigKey.AntigravityModelName, antigravityModelName);
 	});
 	run(() => {
 		setConfiguration(GitAIConfigKey.OpenAIModelName, openAIModelName);
 	});
 	run(() => {
+		setConfiguration(GitAIConfigKey.AntigravityCustomEndpoint, antigravityCustomEndpoint);
+	});
+	run(() => {
 		setConfiguration(GitAIConfigKey.OpenAICustomEndpoint, openAICustomEndpoint);
+	});
+	run(() => {
+		setSecret(AISecretHandle.AntigravityKey, antigravityKey);
 	});
 	run(() => {
 		setSecret(AISecretHandle.OpenAIKey, openAIKey);
@@ -210,6 +246,74 @@
 
 <CardGroup>
 	<form class="git-radio" bind:this={form} onchange={(e) => onFormChange(e.currentTarget)}>
+		<CardGroup.Item labelFor="Antigravity">
+			{#snippet title()}
+				Antigravity
+			{/snippet}
+			{#snippet actions()}
+				<RadioButton name="modelKind" id="Antigravity" value={ModelKind.Antigravity} />
+			{/snippet}
+		</CardGroup.Item>
+		{#if modelKind === ModelKind.Antigravity}
+			<CardGroup.Item>
+				<Select
+					value={antigravityOption}
+					options={keyOptions}
+					wide
+					label="Do you want to provide your own key?"
+					onselect={(value) => {
+						antigravityOption = value as KeyOption;
+					}}
+				>
+					{#snippet itemSnippet({ item, highlighted })}
+						<SelectItem selected={item.value === antigravityOption} {highlighted}>
+							{item.label}
+						</SelectItem>
+					{/snippet}
+				</Select>
+
+				{#if antigravityOption === KeyOption.ButlerAPI}
+					{#if !$user}
+						<AuthorizationBanner message="Please sign in to use the GitButler API." />
+					{:else}
+						{@render shortNote("GitButler uses OpenAI API for commit messages and branch names.")}
+					{/if}
+				{/if}
+
+				{#if antigravityOption === KeyOption.BringYourOwn}
+					<Textbox
+						label="API key"
+						type="password"
+						bind:value={antigravityKey}
+						required
+						placeholder="sk-..."
+					/>
+
+					<Select
+						value={antigravityModelName}
+						options={antigravityModelOptions}
+						label="Model version"
+						wide
+						onselect={(value) => {
+							antigravityModelName = value as AntigravityModelName;
+						}}
+					>
+						{#snippet itemSnippet({ item, highlighted })}
+							<SelectItem selected={item.value === antigravityModelName} {highlighted}>
+								{item.label}
+							</SelectItem>
+						{/snippet}
+					</Select>
+
+					<Textbox
+						label="Custom endpoint"
+						bind:value={antigravityCustomEndpoint}
+						placeholder="https://ai.literegn.com/v1"
+					/>
+				{/if}
+			</CardGroup.Item>
+		{/if}
+
 		<CardGroup.Item labelFor="open-ai">
 			{#snippet title()}
 				Open AI

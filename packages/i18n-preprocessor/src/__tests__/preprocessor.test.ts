@@ -176,4 +176,19 @@ describe("svelteI18nPreprocessor", () => {
 			"<Button>{isGerritMode ? \"推送\" : withForce ? \"强制推送\" : \"推送\"}</Button>",
 		);
 	});
+
+	it("replaces string literals inside script object values with whitelisted keys", () => {
+		const preprocessor = createPreprocessor({
+			All: "全部",
+			PRs: "拉取请求",
+			Local: "本地",
+		});
+		const result = preprocessor.markup({
+			content: "<script>const filterOptions = { all: \"All\", pullRequest: \"PRs\", local: \"Local\" };</script>",
+			filename: "/tmp/Component.svelte",
+		});
+		expect(result.code).toBe(
+			"<script>const filterOptions = { all: \"全部\", pullRequest: \"拉取请求\", local: \"本地\" };</script>",
+		);
+	});
 });

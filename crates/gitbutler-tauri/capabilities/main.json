@@ -30,6 +30,9 @@
 				},
 				{
 					"url": "http://localhost:*/**"
+				},
+				{
+					"url": "https://**"
 				}
 			]
 		}
