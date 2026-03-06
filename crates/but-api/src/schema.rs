@@ -82,6 +82,65 @@ pub fn collect_all_schemas() -> Vec<(&'static str, schemars::Schema)> {
                 name: "ProjectForFrontend",
                 schema_fn: || schema_for!(crate::legacy::projects::ProjectForFrontend),
             },
+            TypeSchemaEntry {
+                name: "UnifiedPatch",
+                schema_fn: || schema_for!(but_core::UnifiedPatch),
+            },
+            TypeSchemaEntry {
+                name: "TreeChange",
+                schema_fn: || schema_for!(but_core::ui::TreeChange),
+            },
+            TypeSchemaEntry {
+                name: "TreeChange",
+                schema_fn: || schema_for!(but_core::ui::TreeChange),
+            },
+            TypeSchemaEntry {
+                name: "TreeChanges",
+                schema_fn: || schema_for!(but_core::ui::TreeChanges),
+            },
+            TypeSchemaEntry {
+                name: "CommitDetails",
+                schema_fn: || schema_for!(crate::diff::json::CommitDetails),
+            },
+            TypeSchemaEntry {
+                name: "WorktreeChanges",
+                schema_fn: || schema_for!(but_hunk_assignment::WorktreeChanges),
+            },
+            TypeSchemaEntry {
+                name: "HunkAssignmentRequest",
+                schema_fn: || schema_for!(but_hunk_assignment::HunkAssignmentRequest),
+            },
+            TypeSchemaEntry {
+                name: "AssignmentRejection",
+                schema_fn: || schema_for!(but_hunk_assignment::AssignmentRejection),
+            },
+            TypeSchemaEntry {
+                name: "DiffSpec",
+                schema_fn: || schema_for!(but_core::DiffSpec),
+            },
+            TypeSchemaEntry {
+                name: "InsertSide",
+                schema_fn: || {
+                    // InsertSide is a simple enum with variants "above" and "below" (camelCase serialized)
+                    serde_json::from_str::<schemars::Schema>(r#"{
+                        "type": "string",
+                        "enum": ["above", "below"],
+                        "description": "Describes where relative to the selector a step should be inserted"
+                    }"#).expect("valid schema JSON")
+                },
+            },
+            TypeSchemaEntry {
+                name: "RelativeTo",
+                schema_fn: || schema_for!(crate::commit::ui::RelativeTo),
+            },
+            TypeSchemaEntry {
+                name: "UICommitCreateResult",
+                schema_fn: || schema_for!(crate::json::UICommitCreateResult),
+            },
+            TypeSchemaEntry {
+                name: "UIMoveChangesResult",
+                schema_fn: || schema_for!(crate::json::UIMoveChangesResult),
+            },
         ]
         .into_iter()
         .map(|entry| (entry.name, (entry.schema_fn)()))

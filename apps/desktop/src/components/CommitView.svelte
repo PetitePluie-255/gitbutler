@@ -35,6 +35,7 @@
 		ontoggle?: (collapsed: boolean) => void;
 		onerror: (err: unknown) => void;
 		onclose?: () => void;
+		onpopout?: () => void;
 	};
 
 	let {
@@ -49,6 +50,7 @@
 		ontoggle,
 		onerror,
 		onclose,
+		onpopout,
 	}: Props & { isInEditMessageMode?: boolean } = $props();
 
 	const stackService = inject(STACK_SERVICE);
@@ -139,6 +141,8 @@
 		return modeService !== undefined && !isReadOnly;
 	}
 
+	let drawer = $state<ReturnType<typeof Drawer>>();
+
 	function cancelEdit() {
 		setMode("view");
 	}
@@ -147,6 +151,7 @@
 <ReduxResult {stackId} {projectId} result={commitQuery.result} {onerror}>
 	{#snippet children(commit, env)}
 		<Drawer
+			bind:this={drawer}
 			bind:clientHeight
 			testId={TestId.CommitDrawer}
 			persistId="commit-view-drawer-{projectId}-{stackId}-{commitKey.commitId}"
@@ -165,6 +170,17 @@
 			bottomBorder={false}
 			noshrink
 		>
+			{#snippet closeActions()}
+				{#if onpopout}
+					<Button
+						kind="ghost"
+						icon="pop-out-bottom-right"
+						size="tag"
+						tooltip="Pop out diff view"
+						onclick={onpopout}
+					/>
+				{/if}
+			{/snippet}
 			{#snippet header()}
 				<CommitTitle
 					truncate
@@ -176,14 +192,20 @@
 
 			{#snippet actions()}
 				{#if canEdit()}
+					{@const isEditingMessage =
+						projectState.exclusiveAction.current?.type === "edit-commit-message" &&
+						projectState.exclusiveAction.current.commitId === commit.id}
 					<Button
 						testId={TestId.CommitDrawerActionEditMessage}
 						size="tag"
 						kind="ghost"
 						icon="edit"
-						onclick={() => setMode("edit")}
+						onclick={() => {
+							drawer?.open();
+							setMode("edit");
+						}}
 						tooltip={isReadOnly ? "Read-only mode" : "Edit commit message"}
-						disabled={isReadOnly}
+						disabled={isReadOnly || isEditingMessage}
 					/>
 				{/if}
 				{@const data = isLocalAndRemoteCommit(commit)
@@ -194,7 +216,10 @@
 							commitStatus: commit.state.type,
 							commitUrl: forge.current.commitUrl(commit.id),
 							onUncommitClick: () => handleUncommit(),
-							onEditMessageClick: () => setMode("edit"),
+							onEditMessageClick: () => {
+								drawer?.open();
+								setMode("edit");
+							},
 						}
 					: undefined}
 				{#if data}

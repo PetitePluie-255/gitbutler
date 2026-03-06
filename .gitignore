@@ -51,6 +51,7 @@ tsconfig.tsbuildinfo
 # playwright
 test-results*
 playwright-report
+packages/ui/tests/.cache
 
 # storybook
 *storybook.log

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Expr, FnArg, ItemFn, Pat, parse_macro_input};
+use syn::{FnArg, ItemFn, Pat, parse_macro_input};
 
 /// A macro to help generate wrappers which are used by some clients to support deserialisation of parameters
 /// for calls, and serialisation of return values, usually with JSON in mind.
@@ -19,6 +19,9 @@ use syn::{Expr, FnArg, ItemFn, Pat, parse_macro_input};
 ///     - Use it like `but_api(try_from = JSONReturnType)` where `JSONReturnType::try_from(actual_return_type)?` is implemented.
 ///     - Controls how the actual return value is fallibly converted for JSON serialization in `func_json` and `func_cmd`.
 ///
+/// These can be combined with commas, e.g. `#[but_api(napi, try_from = json::CommitDetails)]`
+/// or `#[but_api(napi, json::CommitDetails)]`.
+///
 /// # Generated Functions
 ///
 /// This paragraph explains what it generates.
@@ -33,7 +36,7 @@ use syn::{Expr, FnArg, ItemFn, Pat, parse_macro_input};
 /// * `func_cmd` for calls from the `but-server`, taking `(params: Params) ` and returning `Result<serde_json::Value, json::Error>`.
 ///     - It performs all **Parameter Transformations** of `func_json`.
 /// * `func_napi` (opt-in) for calls from Node.js via napi-rs, taking individual typed parameters and returning `napi::Result<serde_json::Value>`.
-///     - **Only generated when `napi` is specified**: `#[but_api(napi)]` or `#[but_api(napi, try_from = Foo)]`.
+///     - **Only generated when `napi` is specified**: `#[but_api(napi)]`, `#[but_api(napi, Foo)]`, or `#[but_api(napi, try_from = Foo)]`.
 ///     - Gated behind `#[cfg(feature = "napi")]`.
 ///     - **Parameter Transformation**
 ///         - `Context`/`&Context`/`&mut Context`/`ThreadSafeContext` → `String` named `project_id`
@@ -60,8 +63,10 @@ pub fn but_api(attr: TokenStream, item: TokenStream) -> TokenStream {
     let opts = if attr.is_empty() {
         Options::default()
     } else {
-        let meta = syn::parse_macro_input!(attr as syn::Meta);
-        match parse_attrs_to_options(meta, is_result_option) {
+        match syn::parse::Parser::parse(
+            |input: syn::parse::ParseStream| parse_options(input, is_result_option),
+            attr,
+        ) {
             Ok(opts) => opts,
             Err(err) => return err.into_compile_error().into(),
         }
@@ -273,7 +278,7 @@ pub fn but_api(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Compute the TypeScript return type name string for napi's ts_return_type attribute.
-    let ts_return_type_str = type_to_ts_name(&json_ty);
+    let ts_return_type_str = format!("Promise<{}>", type_to_ts_name(&json_ty));
 
     // The napi function needs `legacy` when json_ty_by_name is non-empty (Context parameter).
     let napi_legacy_cfg = if !json_ty_by_name.is_empty() {
@@ -283,7 +288,7 @@ pub fn but_api(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Build the napi function body.
-    // For async functions, we use an `async {}` block; for sync, a closure.
+    // For async functions, we use an `async {}` block; for sync, spawn_blocking.
     // Both return anyhow::Result to handle any error type uniformly.
     let napi_body = if asyncness.is_some() {
         quote! {
@@ -302,21 +307,36 @@ pub fn but_api(attr: TokenStream, item: TokenStream) -> TokenStream {
             })
         }
     } else {
+        // For sync functions, param conversions must be inside spawn_blocking
+        // so that non-Send types (e.g. Context with Rc) are never moved across threads.
         quote! {
-            let __napi_body_result: ::anyhow::Result<::serde_json::Value> = (|| {
-                let result = #napi_call_fn_args?;
-                #convert_to_json_result_type
-                Ok(::serde_json::to_value(result)?)
-            })();
-            __napi_body_result.map_err(|e: ::anyhow::Error| {
-                let ctx = but_error::AnyhowContextExt::custom_context_or_error_chain(&e);
-                let message = ctx
-                    .message
-                    .map(|m| m.to_string())
-                    .unwrap_or_else(|| format!("{e:#}"));
-                napi::Error::new(napi::Status::GenericFailure, message)
+            ::tokio::task::spawn_blocking(move || {
+                #(#napi_param_conversions);*
+                let __napi_body_result: ::anyhow::Result<::serde_json::Value> = (|| {
+                    let result = #napi_call_fn_args?;
+                    #convert_to_json_result_type
+                    Ok(::serde_json::to_value(result)?)
+                })();
+                __napi_body_result.map_err(|e: ::anyhow::Error| {
+                    let ctx = but_error::AnyhowContextExt::custom_context_or_error_chain(&e);
+                    let message = ctx
+                        .message
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|| format!("{e:#}"));
+                    napi::Error::new(napi::Status::GenericFailure, message)
+                })
             })
+            .await
+            .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("spawn_blocking join error: {e}")))?
         }
+    };
+
+    // For async functions, param conversions happen outside the body (in the async fn).
+    // For sync functions, they're already inside spawn_blocking in napi_body.
+    let napi_external_conversions = if asyncness.is_some() {
+        quote! { #(#napi_param_conversions);* }
+    } else {
+        quote! {}
     };
 
     let napi_fn_block = if opts.napi {
@@ -324,10 +344,10 @@ pub fn but_api(attr: TokenStream, item: TokenStream) -> TokenStream {
             /// napi function - strongly typed params, serde_json::Value output, automatic error conversion.
             #napi_legacy_cfg
             #[napi_derive::napi(ts_return_type = #ts_return_type_str)]
-            #vis #asyncness fn #fn_napi_name(
+            #vis async fn #fn_napi_name(
                 #(#napi_fn_params),*
             ) -> napi::Result<::serde_json::Value> {
-                #(#napi_param_conversions);*
+                #napi_external_conversions
                 #napi_body
             }
 
@@ -564,79 +584,67 @@ struct ResultConversion {
     json_ty_rval: syn::Type,
 }
 
-fn parse_attrs_to_options(meta: syn::Meta, is_result_option: bool) -> Result<Options, syn::Error> {
+fn parse_options(input: syn::parse::ParseStream, is_result_option: bool) -> syn::Result<Options> {
     let mut napi = false;
-    let path = match meta {
-        syn::Meta::Path(path) => {
-            if path.is_ident("napi") {
-                // #[but_api(napi)]
-                napi = true;
-                None
-            } else {
-                // #[but_api(Foo)]
-                Some((FromMode::From, path))
-            }
-        }
-        syn::Meta::NameValue(nv) => {
-            if let (Some(ident), Expr::Path(path)) = (&nv.path.get_ident(), &nv.value) {
-                if *ident == "try_from" {
-                    // #[but_api(try_from = Foo)]
-                    Some((FromMode::TryFrom, path.path.clone()))
-                } else {
-                    return Err(syn::Error::new_spanned(
-                        ident,
-                        "Need `try_from = path` to use try-from instead of from",
-                    ));
-                }
-            } else {
+    let mut conversion_path: Option<(FromMode, syn::Path)> = None;
+
+    while !input.is_empty() {
+        if input.peek(syn::Ident) && input.peek2(syn::Token![=]) {
+            // try_from = Path
+            let ident: syn::Ident = input.parse()?;
+            if ident != "try_from" {
                 return Err(syn::Error::new_spanned(
-                    nv,
-                    "Need `try_from = path` to use try-from instead of from",
+                    ident,
+                    "Expected `try_from = Type`; only `try_from` is supported as a key",
                 ));
             }
-        }
-        syn::Meta::List(list) => {
-            // #[but_api(napi, try_from = Foo)] or #[but_api(napi, Foo)]
-            let mut conversion_path = None;
-            list.parse_nested_meta(|nested| {
-                if nested.path.is_ident("napi") {
-                    napi = true;
-                    Ok(())
-                } else if nested.path.is_ident("try_from") {
-                    // try_from = Foo
-                    let value = nested.value()?;
-                    let path: syn::Path = value.parse()?;
-                    conversion_path = Some((FromMode::TryFrom, path));
-                    Ok(())
-                } else {
-                    // Bare path like `Foo` → FromMode::From
-                    conversion_path = Some((FromMode::From, nested.path.clone()));
-                    Ok(())
+            input.parse::<syn::Token![=]>()?;
+            let path: syn::Path = input.parse()?;
+            if conversion_path.is_some() {
+                return Err(syn::Error::new_spanned(
+                    path,
+                    "Only one conversion type may be specified",
+                ));
+            }
+            conversion_path = Some((FromMode::TryFrom, path));
+        } else {
+            let path: syn::Path = input.parse()?;
+            if path.is_ident("napi") {
+                napi = true;
+            } else {
+                if conversion_path.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        path,
+                        "Only one conversion type may be specified",
+                    ));
                 }
-            })?;
-            conversion_path
+                conversion_path = Some((FromMode::From, path));
+            }
         }
-    };
 
-    let result_conversion = path.map(|(conv, p)| {
+        if !input.is_empty() {
+            input.parse::<syn::Token![,]>()?;
+        }
+    }
+
+    let result_conversion = conversion_path.map(|(mode, p)| {
         let base_ty = syn::Type::Path(syn::TypePath {
             qself: None,
-            path: p.clone(),
+            path: p,
         });
-
-        let rval_ty = if is_result_option {
+        let json_ty_rval = if is_result_option {
             syn::parse_quote! { Option<#base_ty> }
         } else {
             base_ty.clone()
         };
-
         ResultConversion {
-            mode: conv,
+            mode,
             is_result_option,
             json_ty: base_ty,
-            json_ty_rval: rval_ty,
+            json_ty_rval,
         }
     });
+
     Ok(Options {
         result_conversion,
         napi,

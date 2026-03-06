@@ -252,6 +252,7 @@ pub struct CommitOwned {
 /// A patch in unified diff format to show how a resource changed or now looks like (in case it was newly added),
 /// or how it previously looked like in case of a deletion.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "export-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "subject")]
 pub enum UnifiedPatch {
     /// The resource was a binary and couldn't be diffed.
@@ -401,6 +402,7 @@ pub struct ChangeState {
 
 /// The status we can't handle, which always originated in the worktree.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "export-schema", derive(schemars::JsonSchema))]
 pub enum IgnoredWorktreeTreeChangeStatus {
     /// A conflicting entry in the index. The worktree state of the entry is unclear.
     Conflict,
@@ -413,9 +415,14 @@ pub enum IgnoredWorktreeTreeChangeStatus {
 
 /// A way to indicate that a path in the index isn't suitable for committing and needs to be dealt with.
 #[derive(Clone, Serialize)]
+#[cfg_attr(feature = "export-schema", derive(schemars::JsonSchema))]
 pub struct IgnoredWorktreeChange {
     /// The worktree-relative path to the change.
     #[serde(serialize_with = "but_serde::bstring_lossy::serialize")]
+    #[cfg_attr(
+        feature = "export-schema",
+        schemars(schema_with = "but_schemars::bstring")
+    )]
     pub path: BString,
     /// The status that caused this change to be ignored.
     pub status: IgnoredWorktreeTreeChangeStatus,

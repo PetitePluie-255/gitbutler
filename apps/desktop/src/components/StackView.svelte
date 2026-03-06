@@ -109,7 +109,7 @@
 		panel2: {
 			minWidth: 20,
 			maxWidth: 64,
-			defaultValue: 32,
+			defaultValue: 37,
 		},
 	};
 
@@ -143,9 +143,6 @@
 	// Get commit data for drop handlers when viewing a commit
 	const commitQuery = $derived(
 		commitId ? stackService.commitById(stableProjectId, stableStackId, commitId) : undefined,
-	);
-	const commitFiles = $derived(
-		commitId ? stackService.commitChanges(stableProjectId, commitId) : undefined,
 	);
 	const runHooks = $derived(projectRunCommitHooks(stableProjectId));
 	const isCommitView = $derived(!!(branchName && commitId));
@@ -609,6 +606,7 @@
 									})
 								: { amendHandler: undefined, squashHandler: undefined, hunkHandler: undefined }}
 						{#if branchName && commitId}
+							{@const commitFiles = stackService.commitChanges(projectId, commitId)}
 							<Dropzone
 								handlers={[amendHandler, squashHandler, hunkHandler].filter(isDefined)}
 								fillHeight
@@ -637,6 +635,7 @@
 										rounded
 										{onerror}
 										onclose={onclosePreview}
+										onpopout={() => multiDiffView?.openFloatingDiff()}
 									/>
 									{#if commitFiles}
 										{@const commitResult = commitFiles?.result}
@@ -676,6 +675,7 @@
 									{onerror}
 									onclose={onclosePreview}
 									rounded
+									onpopout={() => multiDiffView?.openFloatingDiff()}
 								/>
 								<ReduxResult {projectId} {stackId} result={changesQuery.result}>
 									{#snippet children(result)}

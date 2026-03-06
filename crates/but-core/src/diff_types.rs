@@ -5,15 +5,24 @@ use crate::TreeChange;
 
 /// A change that should be used to create a new commit or alter an existing one, along with enough information to know where to find it.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "export-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffSpec {
     /// The previous location of the entry, the source of a rename if there was one.
     #[serde(rename = "previousPathBytes")]
+    #[cfg_attr(
+        feature = "export-schema",
+        schemars(schema_with = "but_schemars::bstring_opt")
+    )]
     pub previous_path: Option<BString>,
     /// The worktree-relative path to the worktree file with the content to commit.
     ///
     /// If `hunks` is empty, this means the current content of the file should be committed.
     #[serde(rename = "pathBytes")]
+    #[cfg_attr(
+        feature = "export-schema",
+        schemars(schema_with = "but_schemars::bstring")
+    )]
     pub path: BString,
     /// If one or more hunks are specified, match them with actual changes currently in the worktree.
     /// Failure to match them will lead to the change being dropped.
@@ -45,6 +54,7 @@ impl From<TreeChange> for DiffSpec {
 /// The header of a hunk that represents a change to a file.
 #[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "export-ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "export-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "export-ts", ts(export, export_to = "./core/diffTypes.ts"))]
 pub struct HunkHeader {

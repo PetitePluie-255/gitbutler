@@ -97,6 +97,7 @@ members = [
     # the non-legacy code should be matching Exemplary standards of documentation
     "crates/but-api",               # 📄A project-based API to used by all clients (CLI, GUI, etc)
     "crates/but-api-macros",        # 📄A utility to generate exactly the code we need in the `but-api`.
+    "crates/but-api-macros/tests",  # 📄Compile-time coverage for all `#[but_api]` macro features.
 
     ##
     ### Binaries
@@ -265,6 +266,8 @@ petgraph = { version = "0.8.3", default-features = false, features = [
 schemars = { version = "1.2.0", default-features = false, features = [
     "std",
     "derive",
+    "uuid1",
+    "preserve_order",
 ] }
 async-openai = { version = "0.33.0", default-features = false, features = [
     "rustls",
